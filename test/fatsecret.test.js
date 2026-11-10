@@ -185,13 +185,38 @@ test('parseMenu turns servings into grams and keeps counted units, matching the 
     breakfast: '50 g Bauer Вишня без Косточки\n100 g Овсяные Хлопья\n2 круж. Кофе с Молоком\n1/2 ст. л. Мёд\n4 шт Яйцо (Целое)',
     lunch: '25 g Золотой Изюм (без Косточек)\n100 g Соленыч Капуста Квашеная с Клюквой\n0.7 Огурец (с Кожурой)\n70 g Макфа Макароны',
     dinner: '200 g President Творог 0,1%\n120 ml Food Master Кефир 2,5%',
-    snack: '35 g Едим с Пользой Изолят Соевый\n1 яблоко Яблоко Желтое',
+    snack: '35 g Едим с Пользой Изолят Соевый\nЯблоко Желтое',
   });
 });
 
-test('parseMenu keeps FatSecret text for a serving without a known weight', () => {
-  assert.strictEqual(parseMenu(REAL_DIARY, {}).dinner,
-    '2 servings President Творог 0,1%\n1.2 servings Food Master Кефир 2,5%');
+test('parseMenu shows a single item as just its name, but keeps the count of a measure', () => {
+  const text = JSON.stringify({ food_entries: { food_entry: [
+    realEntry('Other', '1', 'serving', 'Протеиновый Кекс', '1.000', '112488734', '142931052'),
+    realEntry('Other', '1', '', 'Киви', '1.000', '18651', '5431'),
+    realEntry('Other', '1', 'яблоко', 'Яблоко Желтое', '1.000', '7183159', '7449714'),
+    realEntry('Other', '5', '', 'Помидоры Черри', '5.000', '544954', '519595'),
+    realEntry('Other', '1', 'tbsp', 'Мёд', '1.000', '40062', '39536'),
+    realEntry('Other', '1', 'oz', 'Сыр', '1.000', '1', '1'),
+    realEntry('Other', '1', 'g', 'Соль', '1.000', '2', '2'),
+    realEntry('Other', '1', 'serving', 'Соленыч Капуста', '1.000', '44109317', '52143226'),
+  ] } });
+  assert.strictEqual(parseMenu(text, { 44109317: { amount: 100, unit: 'g' } }).snack,
+    'Протеиновый Кекс\nКиви\nЯблоко Желтое\n5 Помидоры Черри\n1 ст. л. Мёд\n1 oz Сыр\n1 g Соль\n100 g Соленыч Капуста');
+});
+
+test('parseMenu shows a serving without a known weight as порц.', () => {
+  const menu = parseMenu(REAL_DIARY, {});
+  assert.strictEqual(menu.dinner, '2 порц. President Творог 0,1%\n1.2 порц. Food Master Кефир 2,5%');
+  assert.strictEqual(menu.breakfast.split('\n')[0], '1/2 порц. Bauer Вишня без Косточки');
+});
+
+test('parseMenu never shows the word serving, even in a description it cannot split', () => {
+  const text = JSON.stringify({ food_entries: { food_entry: [
+    { meal: 'Lunch', food_entry_description: '1 serving Борщ (домашний)', food_entry_name: 'Борщ',
+      number_of_units: '1.000', serving_id: '9', food_id: '9', calories: '1' },
+    realEntry('Lunch', '1', 'serving (250 g)', 'Суп', '1.000', '8', '8'),
+  ] } });
+  assert.strictEqual(parseMenu(text, {}).lunch, '1 порц. Борщ (домашний)\n1 порц. (250 g) Суп');
 });
 
 test('parseMenu leaves a unit it does not know unchanged', () => {

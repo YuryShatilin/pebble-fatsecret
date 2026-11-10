@@ -38,6 +38,9 @@ var WEIGHT_UNITS = { 'г': 'g', 'g': 'g', 'мл': 'ml', 'ml': 'ml' };
 // Units that already are a weight or volume, as FatSecret spells them in descriptions.
 var METRIC_UNITS = { 'g': 'g', 'gs': 'g', 'г': 'g', 'гs': 'g', 'ml': 'ml', 'mls': 'ml', 'мл': 'ml', 'млs': 'ml' };
 var SERVING_UNIT = /^servings?$/;
+// Any leftover "serving"/"servings" is shown as the Russian abbreviation.
+var SERVING_WORD = /\bservings?\b/gi;
+var SERVING_SHORT = 'порц.';
 // Household units keep their count and get a Russian abbreviation; unknown units stay as they are.
 var UNIT_NAMES = {
   'large': 'шт', 'medium': 'шт', 'small': 'шт', 'extra large': 'шт', 'jumbo': 'шт',
@@ -88,6 +91,21 @@ function parseServingWeights(responseText) {
   return weights;
 }
 
+// "1 Киви", "1 serving Протеиновый Кекс" and "1 яблоко Яблоко Желтое" say nothing beyond the
+// name, so they show as just the name. Measures such as "1 tbsp" or "1 oz" keep their count, and a
+// serving whose weight is known is shown in grams instead.
+function isSingleItem(parts, servingWeight) {
+  if (parts.quantity !== '1') {
+    return false;
+  }
+  var unit = parts.unit.toLowerCase();
+  if (SERVING_UNIT.test(unit)) {
+    return servingWeight === undefined;
+  }
+  return unit === '' ||
+    parts.name.toLowerCase().split(/\s+/).indexOf(unit) !== -1;
+}
+
 // Servings become grams or millilitres when their weight is known; other units keep their count.
 function describe(entry, servingWeights) {
   var text = entry.food_entry_description;
@@ -97,7 +115,13 @@ function describe(entry, servingWeights) {
   text = oneLine(text);
 
   var parts = splitDescription(entry);
-  if (parts === null || parts.unit === '') {
+  if (parts === null) {
+    return text.replace(SERVING_WORD, SERVING_SHORT);
+  }
+  if (isSingleItem(parts, servingWeights[entry.serving_id])) {
+    return parts.name;
+  }
+  if (parts.unit === '') {
     return text;
   }
   var metric = METRIC_UNITS[parts.unit];
@@ -111,7 +135,8 @@ function describe(entry, servingWeights) {
   var units = Number(entry.number_of_units);
   var weight = servingWeights[entry.serving_id];
   if (!SERVING_UNIT.test(parts.unit) || weight === undefined || !isFinite(units)) {
-    return text;
+    // Without a known weight the count stays, but "serving" never reaches the watch.
+    return parts.quantity + ' ' + parts.unit.replace(SERVING_WORD, SERVING_SHORT) + ' ' + parts.name;
   }
   return Math.round(units * weight.amount) + ' ' + weight.unit + ' ' + parts.name;
 }
