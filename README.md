@@ -2,7 +2,11 @@
 
 A Pebble Time 2 watchapp that shows today's meals from a FatSecret food diary: lunch, snacks, dinner and breakfast, one page each.
 
+![Lunch page on the watch](docs/screenshot.png)
+
 Up and Down scroll a page; at the end of a page the next press turns to the next one. An arrow shows that a page has more lines in that direction. Select refreshes.
+
+Today's menu is kept on the watch, so it opens at once; it is fetched from FatSecret only when there is none for today yet, or on Select.
 
 ## Set up
 
