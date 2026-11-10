@@ -2,7 +2,8 @@
 // breakfast. Up and Down scroll a page one line at a time; at the end of a page the next press
 // turns to the neighbouring page. Arrows show that a page has more lines in that direction.
 // Select refreshes. Each food item takes exactly one line.
-// The phone fetches on launch, so the menu is always for the current day.
+// The last menu is kept on the watch together with its day. On launch today's menu is shown at once
+// without asking the phone; without one, the menu is fetched as soon as the phone is ready.
 #include <pebble.h>
 
 #define RESPONSE_TIMEOUT_MS 30000
@@ -14,6 +15,12 @@
 #define ROW_HEIGHT 26
 #define ARROW_HEIGHT 14
 #define PAGE_COUNT 4
+
+// Persistent storage holds at most PERSIST_DATA_MAX_LENGTH bytes per key, so each page text is
+// stored in chunks. The day is written last, so an interrupted save is never taken for a valid one.
+#define CACHE_KEY_DAY 1
+#define CACHE_KEY_TEXT_BASE 10
+#define CACHE_CHUNKS ((TEXT_BUFFER_SIZE + PERSIST_DATA_MAX_LENGTH - 1) / PERSIST_DATA_MAX_LENGTH)
 
 enum {
   ERROR_NONE = 0,
@@ -43,6 +50,8 @@ static AppTimer *s_response_timer;
 static int s_page;
 static bool s_has_menu;
 static bool s_refreshing;
+// Launched without today's menu: the request goes out once the phone reports it is ready.
+static bool s_waiting_for_phone;
 static int s_error = ERROR_NONE;
 static int s_api_error;
 static char s_status_text[40];
@@ -183,6 +192,62 @@ static void render(void) {
   layer_mark_dirty(s_page_layer);
 }
 
+// The local calendar date as YYYYMMDD; the phone asks FatSecret for the same local date.
+static int32_t today(void) {
+  time_t now = time(NULL);
+  struct tm *local = localtime(&now);
+  return (local->tm_year + 1900) * 10000 + (local->tm_mon + 1) * 100 + local->tm_mday;
+}
+
+static uint32_t cache_text_key(int page, int chunk) {
+  return CACHE_KEY_TEXT_BASE + page * CACHE_CHUNKS + chunk;
+}
+
+static void save_cache(void) {
+  persist_delete(CACHE_KEY_DAY);
+  for (int i = 0; i < PAGE_COUNT; i++) {
+    // The terminating zero is stored too.
+    int length = strlen(s_pages[i].text) + 1;
+    for (int chunk = 0; chunk < CACHE_CHUNKS; chunk++) {
+      int offset = chunk * PERSIST_DATA_MAX_LENGTH;
+      uint32_t key = cache_text_key(i, chunk);
+      if (offset >= length) {
+        persist_delete(key);
+        continue;
+      }
+      int size = length - offset < PERSIST_DATA_MAX_LENGTH ? length - offset : PERSIST_DATA_MAX_LENGTH;
+      if (persist_write_data(key, s_pages[i].text + offset, size) != size) {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "Could not save menu cache");
+        return;
+      }
+    }
+  }
+  persist_write_int(CACHE_KEY_DAY, today());
+}
+
+// Loads the saved menu when it is for today.
+static bool load_cache(void) {
+  if (!persist_exists(CACHE_KEY_DAY) || persist_read_int(CACHE_KEY_DAY) != today()) {
+    return false;
+  }
+  for (int i = 0; i < PAGE_COUNT; i++) {
+    int offset = 0;
+    for (int chunk = 0; chunk < CACHE_CHUNKS && persist_exists(cache_text_key(i, chunk)); chunk++) {
+      int read = persist_read_data(cache_text_key(i, chunk), s_pages[i].text + offset,
+                                   TEXT_BUFFER_SIZE - offset);
+      if (read <= 0) {
+        return false;
+      }
+      offset += read;
+    }
+    if (offset == 0 || s_pages[i].text[offset - 1] != '\0') {
+      return false;
+    }
+    s_pages[i].scroll = 0;
+  }
+  return true;
+}
+
 static void finish_refresh(int error) {
   s_refreshing = false;
   s_error = error;
@@ -207,12 +272,7 @@ static void start_waiting(void) {
   render();
 }
 
-static void request_refresh(void) {
-  if (s_refreshing) {
-    return;
-  }
-  start_waiting();
-
+static void send_refresh_request(void) {
   DictionaryIterator *out;
   if (app_message_outbox_begin(&out) != APP_MSG_OK) {
     finish_refresh(ERROR_NO_PHONE);
@@ -224,7 +284,29 @@ static void request_refresh(void) {
   }
 }
 
+static void request_refresh(void) {
+  if (s_refreshing) {
+    return;
+  }
+  s_waiting_for_phone = false;
+  start_waiting();
+  send_refresh_request();
+}
+
 static void inbox_received(DictionaryIterator *iterator, void *context) {
+  // The phone says it is ready; it is asked for the menu only when there was none for today.
+  if (dict_find(iterator, MESSAGE_KEY_PhoneReady) != NULL) {
+    if (s_waiting_for_phone) {
+      s_waiting_for_phone = false;
+      // The wait may have timed out already while the phone was starting.
+      if (!s_refreshing) {
+        start_waiting();
+      }
+      send_refresh_request();
+    }
+    return;
+  }
+
   Tuple *error = dict_find(iterator, MESSAGE_KEY_ErrorCode);
   if (error != NULL) {
     Tuple *api_error = dict_find(iterator, MESSAGE_KEY_ApiErrorCode);
@@ -246,6 +328,7 @@ static void inbox_received(DictionaryIterator *iterator, void *context) {
     s_pages[i].scroll = 0;
   }
   s_has_menu = true;
+  save_cache();
   finish_refresh(ERROR_NONE);
 }
 
@@ -328,8 +411,13 @@ static void init(void) {
 
   window_stack_push(s_window, true);
 
-  // The phone fetches by itself on its 'ready' event, so here we only wait for the answer.
-  start_waiting();
+  if (load_cache()) {
+    s_has_menu = true;
+    render();
+  } else {
+    s_waiting_for_phone = true;
+    start_waiting();
+  }
 }
 
 static void deinit(void) {

@@ -118,7 +118,10 @@ function fetchMenu() {
   });
 }
 
-Pebble.addEventListener('ready', fetchMenu);
+// The watch keeps today's menu, so it decides whether to fetch: it answers with RequestRefresh.
+Pebble.addEventListener('ready', function () {
+  send({ PhoneReady: 1 });
+});
 
 Pebble.addEventListener('appmessage', function (e) {
   if (e.payload.RequestRefresh !== undefined) {

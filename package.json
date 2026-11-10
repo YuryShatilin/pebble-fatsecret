@@ -19,7 +19,7 @@
     ],
     "messageKeys": [
       "LunchText", "SnackText", "DinnerText", "BreakfastText",
-      "ErrorCode", "ApiErrorCode", "RequestRefresh"
+      "ErrorCode", "ApiErrorCode", "RequestRefresh", "PhoneReady"
     ],
     "resources": {
       "media": []
