@@ -1,0 +1,28 @@
+{
+  "name": "pebble-fatsecret",
+  "author": "yrami",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "FatSecret Menu",
+    "uuid": "58907951-0d95-4084-b9f4-057d4505bd97",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery"],
+    "watchapp": {
+      "watchface": false
+    },
+    "usesPermissions": [
+      { "name": "Internet", "parameters": { "domains": ["platform.fatsecret.com"] } }
+    ],
+    "messageKeys": [
+      "LunchText", "SnackText", "DinnerText", "BreakfastText",
+      "ErrorCode", "ApiErrorCode", "RequestRefresh"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

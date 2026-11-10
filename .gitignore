@@ -1,0 +1,6 @@
+build/
+src/pkjs/credentials.js
+tools/.request-token.json
+.lock-waf*
+.DS_Store
+node_modules/
